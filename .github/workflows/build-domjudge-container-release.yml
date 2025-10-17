@@ -23,11 +23,11 @@ env:
 
 jobs:
   release-domjudge:
-    if: ${{ github.repository == 'domjudge/domjudge-packaging' }}
+    if: ${{ github.repository == 'herano/domjudge-packaging' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -58,7 +58,7 @@ jobs:
           fi
           sudo apt-get update; sudo apt-get install jq curl -y
           set -x
-            HUBURL="https://registry.hub.docker.com/v2/repositories/domjudge/domserver/tags"
+            HUBURL="https://registry.hub.docker.com/v2/repositories/herano/domserver/tags"
             TAG=$(curl $HUBURL|jq '.results | sort_by(.name) | .[-2].name')
             DJ_TAG=${TAG//\"}
           set +x
@@ -67,12 +67,12 @@ jobs:
       - name: Build the container
         run: |
           cd docker
-          ./build.sh "${{ env.DOMJUDGE_VERSION }}"
+          ./build.sh "${{ env.DOMJUDGE_VERSION }}" herano
           cd ../docker-chroot
-          ./build.sh "${{ env.DOMJUDGE_VERSION }}"
+          ./build.sh "${{ env.DOMJUDGE_VERSION }}" herano
 
       - name: Check the created domserver container
-        run: .github/jobs/check-domjudge-container.sh ${{ env.DOMJUDGE_VERSION }} "domjudge"
+        run: .github/jobs/check-domjudge-container.sh ${{ env.DOMJUDGE_VERSION }} "herano"
 
       - name: Collect docker logs on failure
         if: ${{ !cancelled() }}
@@ -91,9 +91,9 @@ jobs:
         # We assume that we tested the container here and if anything is wrong that we exit early
         run: |
           for IMG in domserver judgehost default-judgehost-chroot icpc-judgehost-chroot full-judgehost-chroot; do
-            docker push domjudge/$IMG:${{ env.DOMJUDGE_VERSION }}
+            docker push herano/$IMG:${{ env.DOMJUDGE_VERSION }}
             if [ ${{ env.DOMJUDGE_LATEST }} = "true" ]; then
-              docker tag domjudge/$IMG:${{ env.DOMJUDGE_VERSION }} domjudge/$IMG:latest
-              docker push domjudge/$IMG
+              docker tag herano/$IMG:${{ env.DOMJUDGE_VERSION }} herano/$IMG:latest
+              docker push herano/$IMG
             fi
           done
