@@ -42,7 +42,7 @@ fi
 
 section_start "Variables"
 VERSION="$1"
-NAMESPACE="${2-domjudge}"
+NAMESPACE="${2-herano}"
 URL=https://www.domjudge.org/releases/domjudge-${VERSION}.tar.gz
 FILE=domjudge.tar.gz
 section_end
