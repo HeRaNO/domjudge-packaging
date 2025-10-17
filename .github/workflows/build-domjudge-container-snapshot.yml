@@ -9,7 +9,7 @@ on:
 
 jobs:
   release-domjudge:
-    if: ${{ github.repository == 'domjudge/domjudge-packaging' }}
+    if: ${{ github.repository == 'herano/domjudge-packaging' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,12 +30,12 @@ jobs:
       - name: Build the container
         run: |
           cd docker
-          ./build.sh bleeding domjudge https://www.domjudge.org/snapshot/domjudge-snapshot-$(date "+%Y%m%d").tar.gz
+          ./build.sh bleeding herano https://www.domjudge.org/snapshot/domjudge-snapshot-$(date "+%Y%m%d").tar.gz
           cd ../docker-chroot
-          ./build.sh bleeding domjudge https://www.domjudge.org/snapshot/domjudge-snapshot-$(date "+%Y%m%d").tar.gz
+          ./build.sh bleeding herano https://www.domjudge.org/snapshot/domjudge-snapshot-$(date "+%Y%m%d").tar.gz
 
       - name: Check the created domserver container
-        run: .github/jobs/check-domjudge-container.sh bleeding  "domjudge"
+        run: .github/jobs/check-domjudge-container.sh bleeding  "herano"
 
       - name: Collect docker logs on failure
         if: ${{ !cancelled() }}
@@ -54,5 +54,5 @@ jobs:
         # We assume that we tested the container here and if anything is wrong that we exit early
         run: |
           for IMG in domserver judgehost; do
-            docker push domjudge/$IMG:bleeding
+            docker push herano/$IMG:bleeding
           done
