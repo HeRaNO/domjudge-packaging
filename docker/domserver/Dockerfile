@@ -17,6 +17,7 @@ RUN apt-get update \
 	python3-sphinx python3-sphinx-rtd-theme fontconfig \
 	texlive-latex-recommended texlive-latex-extra \
 	texlive-fonts-recommended texlive-lang-european latexmk tex-gyre \
+	rst2pdf pkg-config \
 	enscript lpr \
 	&& rm -rf /var/lib/apt/lists/*
 
