@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM debian:trixie
 LABEL org.opencontainers.image.authors="DOMjudge team <team@domjudge.org>"
 
 ENV DEBIAN_FRONTEND=noninteractive \
