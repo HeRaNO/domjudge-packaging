@@ -50,8 +50,12 @@ RUN apt-get update \
 	&& apt-get install --no-install-recommends --no-install-suggests -y \
 	acl zip curl supervisor mariadb-client pv \
 	nginx composer php-fpm php-zip php-bcmath \
-	php-ds php-gd php-mysql php-json php-intl php-gmp \
-	php-xml php-mbstring python3-yaml python3-requests enscript lpr \
+	php-gd php-mysql php-json php-intl php-gmp \
+	php-xml php-mbstring python3-yaml python3-requests enscript lpr software-properties-common \
+	&& add-apt-repository -y ppa:ondrej/php \
+	&& apt-get update \
+	&& apt-get install --no-install-recommends --no-install-suggests --no-upgrade -y \
+	php8.3-ds \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Check the UID and GID of the domjudge user are the same as in the previous build stage
