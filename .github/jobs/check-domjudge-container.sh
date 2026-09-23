@@ -86,7 +86,11 @@ docker exec -t "$DOCKER_DB" mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" -D"$MYSQL_DA
 docker exec -t "$DOCKER_DB" mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" -D"$MYSQL_DATABASE" -e "UPDATE user SET teamid = 1 WHERE userid = 1;"
 docker exec -t "$DOCKER_DB" mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" -D"$MYSQL_DATABASE" -e "SELECT * FROM userrole;"
 docker exec -t "$DOCKER_DB" mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" -D"$MYSQL_DATABASE" -e "SELECT * FROM user;"
-docker exec -t "$DOCKER_DOMSERVER" /opt/domjudge/domserver/bin/dj_setup_database -s install-examples
+docker exec -t "$DOCKER_DOMSERVER" \
+    /opt/domjudge/domserver/bin/dj_setup_database \
+    -u "$MYSQL_USER" \
+    -p "$MYSQL_PASSWORD" \
+    -s install-examples
 
 # Search for incorrect permissions
 for IMG in domserver judgehost default-judgehost-chroot icpc-judgehost-chroot full-judgehost-chroot; do
@@ -116,37 +120,93 @@ docker network inspect "$DOCKER_NETWORK"
 docker exec -t "$DOCKER_DOMSERVER" getent hosts "$DOCKER_JUDGEHOST"
 docker exec -t "$DOCKER_JUDGEHOST" getent hosts "$DOCKER_DOMSERVER"
 
-# It seems to take 4min so gather the full output for that time and check if we're finished afterwards.
-timeout --preserve-status 240 docker logs -f "$DOCKER_JUDGEHOST" || true
-
-CNTR=0
-SINCE=0
 mkdir /tmp/docker-logs
-docker logs --since "$SINCE" "$DOCKER_JUDGEHOST" > /tmp/docker-logs/judgehost_log 2> /tmp/docker-logs/judgehost_err
 
+# `install-examples` differs between older releases and current snapshots.
+# Always test the pass-fail examples when present. Test the scoring examples
+# whenever scoringdemo exists, and require them for bleeding snapshots.
+AVAILABLE_CONTESTS=$(curl -fsS -u "admin:${PASS_ADMIN}" \
+    "http://localhost:12345/base/api/v4/contests" | jq -r '.[].id')
+
+if ! printf '%s\n' "$AVAILABLE_CONTESTS" | grep -qx demo; then
+    echo "Example contest 'demo' was not installed." >&2
+    exit 1
+fi
+
+CONTESTS="demo"
+if printf '%s\n' "$AVAILABLE_CONTESTS" | grep -qx scoringdemo; then
+    CONTESTS="$CONTESTS scoringdemo"
+elif [ "$DOMJUDGE_VERSION" = "bleeding" ]; then
+    echo "Example contest 'scoringdemo' is missing from the bleeding snapshot." >&2
+    exit 1
+else
+    echo "scoringdemo is not available in DOMjudge $DOMJUDGE_VERSION; skipping it."
+fi
+
+# Wait until every imported example submission has a completed judgement.
+# Do not depend on fixed example counts or a particular judgedaemon log
+# message: both can change between releases and snapshots.
+CNTR=0
 while true; do
-    CNTR=$((CNTR+1))
-    NEW_SINCE=$(date --iso-8601=seconds)
-    LOGS=$(docker logs --since "$SINCE" "$DOCKER_JUDGEHOST" 2>&1)
-    if echo "$LOGS" | grep -q "No submissions in queue (for endpoint default), waiting..."; then
+    ALL_JUDGED=1
+
+    for CONTEST in $CONTESTS; do
+        SUBMISSIONS_FILE="/tmp/${CONTEST}-submissions.json"
+        JUDGEMENTS_FILE="/tmp/${CONTEST}-judgements.json"
+
+        curl -fsS -u "admin:${PASS_ADMIN}" \
+            -o "$SUBMISSIONS_FILE" \
+            "http://localhost:12345/base/api/v4/contests/${CONTEST}/submissions"
+        curl -fsS -u "admin:${PASS_ADMIN}" \
+            -o "$JUDGEMENTS_FILE" \
+            "http://localhost:12345/base/api/v4/contests/${CONTEST}/judgements"
+
+        NUM_SUBMISSIONS=$(jq 'length' "$SUBMISSIONS_FILE")
+        NUM_JUDGED=$(jq -s '
+            .[0] as $submissions
+            | .[1] as $judgements
+            | ($judgements
+               | map(select(.end_time != null) | .submission_id)
+               | unique) as $judged
+            | [$submissions[].id | select(. as $id | $judged | index($id))]
+            | unique
+            | length
+        ' "$SUBMISSIONS_FILE" "$JUDGEMENTS_FILE")
+
+        echo "$CONTEST: $NUM_JUDGED / $NUM_SUBMISSIONS submissions judged"
+
+        if [ "$NUM_SUBMISSIONS" -eq 0 ]; then
+            echo "No submissions found for example contest '$CONTEST'." >&2
+            exit 1
+        fi
+
+        if [ "$NUM_JUDGED" -ne "$NUM_SUBMISSIONS" ]; then
+            ALL_JUDGED=0
+        fi
+    done
+
+    if [ "$ALL_JUDGED" -eq 1 ]; then
         break
     fi
-    if [ "$CNTR" -eq 18 ]; then
+
+    if [ "$(docker inspect -f '{{.State.Running}}' "$DOCKER_JUDGEHOST")" != "true" ]; then
+        echo "Judgehost exited before all example submissions were judged." >&2
+        docker logs "$DOCKER_JUDGEHOST" >&2
+        exit 1
+    fi
+
+    CNTR=$((CNTR+1))
+    if [ "$CNTR" -ge 90 ]; then
+        echo "Timed out waiting for all example submissions to be judged." >&2
+        docker logs "$DOCKER_JUDGEHOST" >&2
         exit 1
     fi
     sleep 10
-    SINCE="$NEW_SINCE"
 done
 
-# Overwrite the earlier logs and store the full logs
-docker logs --since "0" "$DOCKER_JUDGEHOST" > /tmp/docker-logs/judgehost_log 2> /tmp/docker-logs/judgehost_err
-
-# Verify that judging worked
-JUDGEMENT_URL="http://localhost:12345/base/api/v4/contests/demo/judgements?result=CORRECT"
-NUMBER_JUDGEMENTS=$(curl -u "admin:${PASS_ADMIN}" "$JUDGEMENT_URL" | jq length)
-if [ "$NUMBER_JUDGEMENTS" -ne "27" ]; then
-  exit 1
-fi
+docker logs --since "0" "$DOCKER_JUDGEHOST" \
+    > /tmp/docker-logs/judgehost_log \
+    2> /tmp/docker-logs/judgehost_err
 
 # Get more detailed health info
 docker ps
